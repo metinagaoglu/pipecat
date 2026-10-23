@@ -25,11 +25,12 @@ from pipecat.frames.frames import (
     StartFrame,
     TTSAudioRawFrame,
 )
-from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven
+from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.deprecation import deprecated
 from pipecat.utils.tracing.service_decorators import traced_tts
+from pipecat.utils.types import NOT_GIVEN, NotGiven
 
 
 def language_to_minimax_language(language: Language) -> str:
@@ -40,8 +41,9 @@ def language_to_minimax_language(language: Language) -> str:
 
     Returns:
         The corresponding MiniMax language name. If ``language`` is not in
-        the verified mapping, falls back to the full language code string and
-        logs a warning (via ``resolve_language(..., use_base_code=False)``).
+        the verified mapping, falls back to its base language's name (``pt-BR``
+        becomes ``Portuguese``) and logs a warning (via
+        ``resolve_language(..., use_base_code=True)``).
     """
     LANGUAGE_MAP = {
         Language.AF: "Afrikaans",
@@ -86,7 +88,7 @@ def language_to_minimax_language(language: Language) -> str:
         Language.ZH: "Chinese",
     }
 
-    return resolve_language(language, LANGUAGE_MAP, use_base_code=False)
+    return resolve_language(language, LANGUAGE_MAP, use_base_code=True)
 
 
 @dataclass
@@ -98,19 +100,20 @@ class MiniMaxTTSSettings(TTSSettings):
         volume: Speech volume (range: 0 to 10).
         pitch: Pitch adjustment (range: -12 to 12).
         emotion: Emotional tone (options: "happy", "sad", "angry", "fearful",
-            "disgusted", "surprised", "calm", "fluent").
+            "disgusted", "surprised", "calm", "fluent", "whisper"). "fluent" and
+            "whisper" need a speech-2.6 model.
         text_normalization: Enable text normalization (Chinese/English).
         latex_read: Enable LaTeX formula reading.
         language_boost: Language boost string for multilingual support.
     """
 
-    speed: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    volume: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    pitch: int | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    emotion: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    text_normalization: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    latex_read: bool | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
-    language_boost: str | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    speed: float | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    volume: float | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    pitch: int | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    emotion: str | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    text_normalization: bool | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    latex_read: bool | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
+    language_boost: str | None | NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
     @classmethod
     def from_mapping(cls, settings: Mapping[str, Any]) -> Self:
@@ -165,7 +168,8 @@ class MiniMaxHttpTTSService(TTSService):
             volume: Speech volume (range: 0 to 10).
             pitch: Pitch adjustment (range: -12 to 12).
             emotion: Emotional tone (options: "happy", "sad", "angry", "fearful",
-                "disgusted", "surprised", "calm", "fluent").
+                "disgusted", "surprised", "calm", "fluent", "whisper"). "fluent" and
+                "whisper" need a speech-2.6 model.
             text_normalization: Enable text normalization (Chinese/English).
             latex_read: Enable LaTeX formula reading.
             exclude_aggregated_audio: Whether to exclude aggregated audio in final chunk.
@@ -204,10 +208,7 @@ class MiniMaxHttpTTSService(TTSService):
                 Mainland China: https://api.minimaxi.chat/v1/t2a_v2
                 Western United States: https://api-uw.minimax.io/v1/t2a_v2
             group_id: MiniMax Group ID to identify project.
-            model: TTS model name. Defaults to "speech-02-turbo". Options include:
-                "speech-2.6-hd", "speech-2.6-turbo" (latest, supports Filipino/Tamil/Persian),
-                "speech-02-hd", "speech-02-turbo",
-                "speech-01-hd", "speech-01-turbo".
+            model: TTS model name. Defaults to "speech-2.8-turbo".
 
                 .. deprecated:: 0.0.105
                     Use ``settings=MiniMaxHttpTTSService.Settings(model=...)`` instead.
@@ -234,7 +235,7 @@ class MiniMaxHttpTTSService(TTSService):
         """
         # 1. Initialize default_settings with hardcoded defaults
         default_settings = self.Settings(
-            model="speech-02-turbo",
+            model="speech-2.8-turbo",
             voice="Calm_Woman",
             language=None,
             speed=1.0,
@@ -278,8 +279,10 @@ class MiniMaxHttpTTSService(TTSService):
                         "fearful",
                         "disgusted",
                         "surprised",
+                        "calm",
                         "neutral",
                         "fluent",
+                        "whisper",
                     ]
                     if params.emotion in supported_emotions:
                         default_settings.emotion = params.emotion

@@ -135,8 +135,9 @@ def _get_system_instruction(service, context) -> str | None:
     Returns:
         The system instruction text, or None if none is present.
     """
-    if hasattr(service, "_settings") and getattr(service._settings, "system_instruction", None):
-        return service._settings.system_instruction
+    system_instruction = getattr(getattr(service, "settings", None), "system_instruction", None)
+    if system_instruction:
+        return system_instruction
 
     if not context:
         return None
@@ -408,7 +409,7 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
                 if not isinstance(frame, MetricsFrame):
                     return
                 try:
-                    playing_id = getattr(service, "_playing_context_id", None)
+                    playing_id = service._audio_context_manager.playing_context_id
                     if playing_id is None:
                         return
                     entry = service._tts_spans.get(playing_id)
@@ -437,7 +438,7 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
                 return await orig_completed(context_id)
 
             def traced_reset_active_audio_context():
-                playing_id = getattr(service, "_playing_context_id", None)
+                playing_id = service._audio_context_manager.playing_context_id
                 if playing_id is not None:
                     end_tts_span(service, playing_id, interrupted=True)
                 return orig_reset_active()
@@ -465,7 +466,7 @@ def traced_tts(func: Callable | None = None, *, name: str | None = None) -> Call
                 await original_setup(self, setup)
                 install_audio_context_patches(self)
 
-            setattr(patched_setup, "__tts_tracing_setup_wrapped__", True)
+            setattr(patched_setup, "__tts_tracing_setup_wrapped__", True)  # noqa: B010
             owner.setup = patched_setup
 
         def attach_run_tts_attributes(service, text, args, kwargs):
@@ -784,7 +785,7 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                     except Exception as e:
                         logging.warning(f"Error in STT post-push tracing: {e}")
 
-            setattr(patched_push_frame, "__stt_tracing_push_frame_wrapped__", True)
+            setattr(patched_push_frame, "__stt_tracing_push_frame_wrapped__", True)  # noqa: B010
             owner.push_frame = patched_push_frame
 
         def patch_stop_ttfb_metrics(owner):
@@ -829,7 +830,7 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                 except Exception as e:
                     logging.warning(f"Error in STT stop_ttfb_metrics tracing: {e}")
 
-            setattr(patched_stop, "__stt_tracing_stop_ttfb_wrapped__", True)
+            setattr(patched_stop, "__stt_tracing_stop_ttfb_wrapped__", True)  # noqa: B010
             owner.stop_ttfb_metrics = patched_stop
 
         def patch_start_stt_usage_metrics(owner):
@@ -866,7 +867,7 @@ def traced_stt(func: Callable | None = None, *, name: str | None = None) -> Call
                 except Exception as e:
                     logging.warning(f"Error in STT usage tracing: {e}")
 
-            setattr(patched_start, "__stt_tracing_usage_wrapped__", True)
+            setattr(patched_start, "__stt_tracing_usage_wrapped__", True)  # noqa: B010
             owner.start_stt_usage_metrics = patched_start
 
         class _TracedSTTDescriptor:
@@ -1314,16 +1315,16 @@ def traced_gemini_live(operation: str) -> Callable:
                                 usage = msg.usage_metadata
                                 operation_attrs["gen_ai.usage.input_tokens"] = (
                                     usage.prompt_token_count or 0
-                                )
+                                ) + (usage.tool_use_prompt_token_count or 0)
                                 operation_attrs["gen_ai.usage.output_tokens"] = (
                                     usage.response_token_count or 0
-                                )
+                                ) + (usage.thoughts_token_count or 0)
                                 if usage.cached_content_token_count is not None:
                                     operation_attrs["gen_ai.usage.cache_read.input_tokens"] = (
                                         usage.cached_content_token_count
                                     )
                                 if usage.thoughts_token_count is not None:
-                                    operation_attrs["gen_ai.usage.reasoning_tokens"] = (
+                                    operation_attrs["gen_ai.usage.reasoning.output_tokens"] = (
                                         usage.thoughts_token_count
                                     )
                                 input_audio_tokens = _gemini_audio_modality_tokens(
